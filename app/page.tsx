@@ -34,7 +34,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const SERVER_URL = process.env.SERVER_URL;
+  const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL;
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -184,7 +185,7 @@ export default function Home() {
                       <p className="mb-3 leading-relaxed">{comment.message}</p>
                       {comment.suggestion && (
                         <div className="bg-gray-50 border-l-4 border-green-600 p-3 mt-3">
-                          <strong className="text-green-700 block mb-1 flex items-center gap-1">
+                          <strong className="text-green-700 mb-1 flex items-center gap-1">
                             <Lightbulb className="w-4 h-4" />
                             Suggestion:
                           </strong>
