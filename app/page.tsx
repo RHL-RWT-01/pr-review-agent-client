@@ -34,7 +34,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-
+  const SERVER_URL = process.env.SERVER_URL;
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -42,7 +42,7 @@ export default function Home() {
     setResult(null);
 
     try {
-      const response = await fetch("http://localhost:8000/review/pr", {
+      const response = await fetch(`${SERVER_URL}/review/pr`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
