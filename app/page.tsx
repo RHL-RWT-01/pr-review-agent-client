@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart3, MessageSquare, Folder, Lightbulb, PartyPopper } from "lucide-react";
+import { BarChart3, MessageSquare, Folder, Lightbulb, PartyPopper, AlertCircle, Clock } from "lucide-react";
 
 interface ReviewComment {
   agent: string;
@@ -34,12 +34,16 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<'rate_limit' | 'server' | 'network' | 'validation' | 'general' | null>(null);
+  const [retryAfter, setRetryAfter] = useState<number | null>(null);
   const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL;
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setErrorType(null);
+    setRetryAfter(null);
     setResult(null);
 
     try {
@@ -52,14 +56,61 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to review PR");
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = { detail: response.statusText };
+        }
+
+        // Handle different error types
+        switch (response.status) {
+          case 429:
+            setErrorType('rate_limit');
+            const retryAfterHeader = response.headers.get('Retry-After');
+            if (retryAfterHeader) {
+              setRetryAfter(parseInt(retryAfterHeader));
+            }
+            throw new Error(
+              errorData.detail ||
+              "Rate limit exceeded. Please wait a moment before trying again."
+            );
+          case 400:
+            setErrorType('validation');
+            throw new Error(
+              errorData.detail ||
+              "Invalid request. Please check the PR URL and try again."
+            );
+          case 413:
+            setErrorType('validation');
+            throw new Error(
+              errorData.detail ||
+              "PR is too large to review. Please try a smaller PR."
+            );
+          case 500:
+          case 502:
+          case 503:
+          case 504:
+            setErrorType('server');
+            throw new Error(
+              errorData.detail ||
+              "Server error. Please try again in a few moments."
+            );
+          default:
+            setErrorType('general');
+            throw new Error(errorData.detail || `Error ${response.status}: ${response.statusText}`);
+        }
       }
 
       const data: ReviewResponse = await response.json();
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setErrorType('network');
+        setError("Cannot connect to the API server. Please check if the server is running.");
+      } else {
+        setError(err instanceof Error ? err.message : "An unexpected error occurred");
+      }
     } finally {
       setLoading(false);
     }
@@ -99,9 +150,62 @@ export default function Home() {
         </form>
 
         {error && (
-          <div className="mb-8 p-4 border-2 border-red-600 bg-red-50">
-            <h3 className="font-serif font-bold mb-1">Error</h3>
-            <p className="text-red-800">{error}</p>
+          <div className={`mb-8 p-4 border-2 ${errorType === 'rate_limit'
+              ? 'border-orange-600 bg-orange-50'
+              : errorType === 'validation'
+                ? 'border-yellow-600 bg-yellow-50'
+                : errorType === 'network'
+                  ? 'border-blue-600 bg-blue-50'
+                  : 'border-red-600 bg-red-50'
+            }`}>
+            <div className="flex items-start gap-3">
+              {errorType === 'rate_limit' ? (
+                <Clock className="w-5 h-5 mt-0.5 text-orange-700 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 mt-0.5 text-red-700 flex-shrink-0" />
+              )}
+              <div className="flex-1">
+                <h3 className="font-serif font-bold mb-1 flex items-center gap-2">
+                  {errorType === 'rate_limit' && 'Rate Limit Exceeded'}
+                  {errorType === 'validation' && 'Invalid Request'}
+                  {errorType === 'network' && 'Connection Error'}
+                  {errorType === 'server' && 'Server Error'}
+                  {errorType === 'general' && 'Error'}
+                  {!errorType && 'Error'}
+                </h3>
+                <p className={`${errorType === 'rate_limit'
+                    ? 'text-orange-800'
+                    : errorType === 'validation'
+                      ? 'text-yellow-800'
+                      : errorType === 'network'
+                        ? 'text-blue-800'
+                        : 'text-red-800'
+                  } mb-2`}>{error}</p>
+                {errorType === 'rate_limit' && retryAfter && (
+                  <p className="text-sm text-orange-700 mt-2">
+                    ⏱️ Please wait approximately {retryAfter} seconds before retrying.
+                  </p>
+                )}
+                {errorType === 'rate_limit' && !retryAfter && (
+                  <p className="text-sm text-orange-700 mt-2">
+                    💡 Tip: Wait a few minutes before submitting another review request.
+                  </p>
+                )}
+                {errorType === 'network' && (
+                  <p className="text-sm text-blue-700 mt-2">
+                    💡 Tip: Make sure the API server is running at <code className="bg-blue-100 px-1 py-0.5 rounded">{SERVER_URL}</code>
+                  </p>
+                )}
+                {(errorType === 'server' || errorType === 'general') && (
+                  <button
+                    onClick={handleSubmit}
+                    className="mt-3 px-4 py-2 bg-black text-white text-sm font-serif hover:bg-gray-800 transition-colors"
+                  >
+                    Try Again
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
